@@ -1,25 +1,28 @@
-# Use this YAML to verify that fine-tuning starter script works. Runs on CPU or GPUs (if available).
-# From `examples/bert`, run:
-#   `composer sequence_classification.py yamls/test/sequence_classification.yaml` (HuggingFace BERT)
-#   `composer sequence_classification.py yamls/test/sequence_classification.yaml model.name=mosaic_bert` (Mosaic BERT)
+# This YAML is built to work with the `sequence_classification.py` starter script!
+#
+#   Follow the instructions in that script to modify the `build_my_dataloader` function
+#   and fine-tune a BERT model on your own dataset!
+#
+#
+#   Note that some of the fields in this template haven't been filled in yet.
+#   Please resolve any empty fields before launching!
 
-tokenizer_name: prajjwal1/bert-tiny
-max_seq_len: 128
-
-# Run Name
-run_name: test
+tokenizer_name: bert-large-uncased
+max_seq_len: 256
 
 load_path: # (Optionally) provide a composer checkpoint to use for the starting weights
 
 # Model
 model:
   name: hf_bert
-  num_labels: 2
+  num_labels: 2 # <-- Make sure to update these after you modify the starter script!
+  use_pretrained: true
   pretrained_model_name: ${tokenizer_name}
   tokenizer_name: ${tokenizer_name}
 
-# Dataloaders
+# Dataloaders (make sure to update these after you modify the starter script!)
 train_loader:
+  task: mrpc
   split: train
   tokenizer_name: ${tokenizer_name}
   max_seq_len: ${max_seq_len}
@@ -28,6 +31,7 @@ train_loader:
   num_workers: 8
 
 eval_loader:
+  task: mrpc
   split: validation
   tokenizer_name: ${tokenizer_name}
   max_seq_len: ${max_seq_len}
@@ -51,30 +55,32 @@ optimizer:
   weight_decay: 1.0e-6
 
 # Training duration and evaluation frequency
-max_duration: 10ba
-eval_interval: 5ba
-eval_subset_num_batches: 4 # For code testing, evaluate on a subset of 4 batches
+max_duration: 10ep
+eval_interval: 1ep
 global_train_batch_size: 16
 
 # System
-seed: 17
+seed: 123
 device_eval_batch_size: 16
 device_train_microbatch_size: 16
-precision: fp32
+precision: amp_bf16
 
 # Logging
-progress_bar: false
-log_to_console: true
-console_log_interval: 1ba
+progress_bar: true
+log_to_console: false
+console_log_interval: 10ba
 
 # Optionally log to W&B
 loggers:
   wandb:
     project: mosaicbert-ft
     entity: mmosbach
-    group: test-group
+    group: bert-large-uncased
 
 callbacks:
   speed_monitor:
-    window_size: 5
+    window_size: 50
   lr_monitor: {}
+
+# Run Name
+run_name: bert-large-uncased_${seed}

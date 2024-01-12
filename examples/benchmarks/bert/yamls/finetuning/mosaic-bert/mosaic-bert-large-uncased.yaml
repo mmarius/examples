@@ -7,24 +7,32 @@
 #   Note that some of the fields in this template haven't been filled in yet.
 #   Please resolve any empty fields before launching!
 
-# Run Name
-run_name: finetune-mosaic-bert
-
-tokenizer_name: bert-base-uncased
-max_seq_len: 128
+tokenizer_name: bert-large-uncased
+max_seq_len: 256
 
 load_path: # (Optionally) provide a composer checkpoint to use for the starting weights
+checkpoint_id: ep0-ba50000 # name of the checkpoint. We will overwrite this in the ft.sh file (actually the run.sub file)
+
+ft_type: pbft # ft (classifier fine-tuning) or pbft (pattern-based fine-tuning)
+
+# Dataset
+dataset:
+  name: rte
+  pattern: "{text1} are we justified in saying that “{text2}”? [MASK]"
+  verbalizer: yes-->1, no-->0
 
 # Model
 model:
-  name: mosaic_bert
-  num_labels: 2 # <-- Make sure to update these after you modify the starter script!
+  name: mosaic_bert-pbft
   pretrained_model_name: ${tokenizer_name}
   tokenizer_name: ${tokenizer_name}
+  pretrained_checkpoint: /data/users/mmosbach/pre-trained-transformers/mosaic-bert-large/${checkpoint_id}-rank0.pt
 
 # Dataloaders (make sure to update these after you modify the starter script!)
 train_loader:
+  task: ${dataset.name}
   split: train
+  num_samples: 128 # <-- -1 means we take the full dataset
   tokenizer_name: ${tokenizer_name}
   max_seq_len: ${max_seq_len}
   shuffle: true
@@ -32,7 +40,9 @@ train_loader:
   num_workers: 8
 
 eval_loader:
+  task: ${dataset.name}
   split: validation
+  num_samples: -1 # for eval this should always be -1, i.e. eval on the full validation split
   tokenizer_name: ${tokenizer_name}
   max_seq_len: ${max_seq_len}
   shuffle: true
@@ -42,7 +52,7 @@ eval_loader:
 # Optimization
 scheduler:
   name: linear_decay_with_warmup
-  t_warmup: 0.06dur # Warmup to the full LR for 6% of the training duration
+  t_warmup: 0.10dur # Warmup to the full LR for 10% of the training duration
   alpha_f: 0.02 # Linearly decay to 0.02x the full LR by the end of the training duration
 
 optimizer:
@@ -55,26 +65,32 @@ optimizer:
   weight_decay: 1.0e-6
 
 # Training duration and evaluation frequency
-max_duration: 10ep
+max_duration: 40ep
 eval_interval: 1ep
 global_train_batch_size: 16
 
 # System
-seed: 17
+seed: 123
 device_eval_batch_size: 16
 device_train_microbatch_size: 16
 precision: amp_bf16
 
 # Logging
-progress_bar: false
-log_to_console: true
+progress_bar: true
+log_to_console: false
 console_log_interval: 10ba
 
 # Optionally log to W&B
-# loggers:
-#   wandb: {}
+loggers:
+  wandb:
+    project: mosaicbert-ft
+    entity: mmosbach
+    group: ${checkpoint_id}_${ft_type}
 
 callbacks:
   speed_monitor:
     window_size: 50
   lr_monitor: {}
+
+# Run Name
+run_name: ${model.name}_${checkpoint_id}_${train_loader.num_samples}_${seed}
