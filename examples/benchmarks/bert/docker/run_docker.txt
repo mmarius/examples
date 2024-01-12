@@ -1,0 +1,43 @@
+# build docker image
+
+docker build -f /nethome/mmosbach/projects/composer/docker/Dockerfile_local \
+    --build-arg USER_UID=$UID \
+    --build-arg USER_NAME=$(id -un) \
+    -t docker.lsv.uni-saarland.de/mmosbach/composer-cpu-dev:2.1.1_cpu-python3.10-ubuntu20.04 . 
+
+
+docker build -f /nethome/mmosbach/projects/composer/docker/Dockerfile_cluster \
+    --build-arg USER_UID=$UID \
+    --build-arg USER_NAME=$(id -un) \
+    -t docker.lsv.uni-saarland.de/mmosbach/mosaicml:2.1.1_cu121-python3.10-ubuntu20.04 . 
+
+# Create docker container on a machine without GPUs
+
+docker run -it --rm \
+    --name mosaic-examples-dev \
+    --user $(id -un) \
+    -v /nethome/mmosbach/projects/mosaicml_examples:/mosaicml_examples \
+    -v /data/users/mmosbach:/data \
+    --shm-size=512GB \
+    docker.lsv.uni-saarland.de/mmosbach/composer-cpu-dev:2.1.1_cpu-python3.10-ubuntu20.04 \
+    /bin/bash
+
+
+# Create docker container on a machine with GPUs
+
+docker run -it --rm \
+    --name mosaic-examples-gpu \
+    --user $(id -un) \
+    --runtime=nvidia --gpus all \
+    -v /nethome/mmosbach/projects/mosaicml_examples:/mosaicml_examples \
+    -v /data/users/mmosbach:/data \
+    --shm-size=512GB \
+    docker.lsv.uni-saarland.de/mmosbach/composer-cpu-dev:2.1.1_cpu-python3.10-ubuntu20.04 \
+    /bin/bash
+
+# Install dependencies
+
+cd mosaicml_examples/examples/benchmarks/bert
+pip install -r requirements-cpu.txt --user
+
+

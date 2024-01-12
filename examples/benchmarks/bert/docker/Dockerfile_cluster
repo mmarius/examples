@@ -1,0 +1,26 @@
+# Base image must at least have pytorch and CUDA installed.
+# We are using MosaicML's PyTorch image here, see: https://hub.docker.com/r/mosaicml/pytorch
+
+# for LSV A100s server
+FROM mosaicml/pytorch:2.1.1_cu121-python3.10-ubuntu20.04
+
+# Update pip
+RUN SHA=ToUcHMe which python3
+RUN python3 -m pip install --upgrade pip
+
+# Specify a new user (USER_NAME and USER_UID are specified via --build-arg)
+ARG USER_UID
+ARG USER_NAME
+ENV USER_GID=$USER_UID
+ENV USER_GROUP="users"
+
+# Create the user
+RUN mkdir /home/$USER_NAME
+RUN useradd -l -d /home/$USER_NAME -u $USER_UID -g $USER_GROUP $USER_NAME
+# this will fix a wandb issue
+RUN mkdir /home/$USER_NAME/.local 
+
+# Change owner of home dir (Note: this is not the lsv nethome)
+RUN chown -R ${USER_UID}:${USER_GID} /home/$USER_NAME/
+
+CMD ["/bin/bash"]
