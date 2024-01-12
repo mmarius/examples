@@ -134,7 +134,7 @@ def build_optimizer(cfg, model):
         raise ValueError(f'Not sure how to build optimizer: {cfg.name}')
 
 
-def build_my_dataloader(cfg: DictConfig, device_batch_size: int):
+def build_my_dataloader(cfg: DictConfig, device_batch_size: int, dataset_cfg: DictConfig, ft_type: str):
     """Create a dataloader for classification.
 
     **Modify this function to train on your own dataset!**
@@ -170,11 +170,14 @@ def build_my_dataloader(cfg: DictConfig, device_batch_size: int):
     # examples with a similar structure!
     #
     # REPLACE THIS WITH YOUR OWN DATASET:
-    dataset = data_module.create_glue_dataset(
-        task='qnli',
+    dataset, num_labels = data_module.create_glue_dataset(
+        task=cfg.task,
         split=cfg.split,
+        num_samples=cfg.num_samples,
         tokenizer_name=cfg.tokenizer_name,
         max_seq_length=cfg.max_seq_len,
+        dataset_cfg=dataset_cfg,
+        ft_type=ft_type
     )
 
     dataset = cast(Dataset, dataset)
@@ -194,22 +197,30 @@ def build_my_dataloader(cfg: DictConfig, device_batch_size: int):
         timeout=cfg.get('timeout', 0),
     )
 
-    return dataloader
+    return dataloader, num_labels
 
 
-def build_model(cfg: DictConfig):
-    # Note: cfg.num_labels should match the number of classes in your dataset!
-    if cfg.name == 'hf_bert':
+def build_model(cfg: DictConfig, num_labels: int):
+    # TODO(mm): add code for hf_bert-pbft
+    if cfg.name == 'hf_bert-ft':
         return hf_bert_module.create_hf_bert_classification(
-            num_labels=cfg.num_labels,
+            num_labels=num_labels,
             pretrained_model_name=cfg.pretrained_model_name,
             use_pretrained=cfg.get('use_pretrained', False),
             model_config=cfg.get('model_config'),
             tokenizer_name=cfg.get('tokenizer_name'),
             gradient_checkpointing=cfg.get('gradient_checkpointing'))
-    elif cfg.name == 'mosaic_bert':
+    elif cfg.name == 'mosaic_bert-ft':
         return mosaic_bert_module.create_mosaic_bert_classification(
-            num_labels=cfg.num_labels,
+            num_labels=num_labels,
+            pretrained_model_name=cfg.pretrained_model_name,
+            pretrained_checkpoint=cfg.get('pretrained_checkpoint'),
+            model_config=cfg.get('model_config'),
+            tokenizer_name=cfg.get('tokenizer_name'),
+            gradient_checkpointing=cfg.get('gradient_checkpointing'))
+    elif cfg.name == 'mosaic_bert-pbft':
+        return mosaic_bert_module.create_mosaic_bert_pattern_based_classification(
+            num_labels=num_labels,
             pretrained_model_name=cfg.pretrained_model_name,
             pretrained_checkpoint=cfg.get('pretrained_checkpoint'),
             model_config=cfg.get('model_config'),
@@ -226,48 +237,64 @@ def main(cfg: DictConfig,
     print(om.to_yaml(cfg))
     reproducibility.seed_all(cfg.seed)
 
+    # Run some assertions of config
+    assert cfg.train_loader.task in data_module._task_column_names.keys()
+    # TODO(mm): Add assertion on num_samples and batch size
+
     # Get batch size info
     cfg = update_batch_size_info(cfg)
 
+    # Dataloaders
+    print('Building train loader...')
+    print(cfg.train_loader)
+    train_loader, num_labels = build_my_dataloader(
+        cfg.train_loader,
+        cfg.global_train_batch_size // dist.get_world_size(),
+        cfg.dataset,
+        ft_type=cfg.ft_type
+    )
+    print('Building eval loader...')
+    print(cfg.eval_loader)
+    global_eval_batch_size = cfg.get('global_eval_batch_size',
+                                     cfg.global_train_batch_size)
+    eval_loader, _ = build_my_dataloader(
+        cfg.eval_loader,
+        global_eval_batch_size // dist.get_world_size(),
+        cfg.dataset,
+        ft_type=cfg.ft_type
+    )
+
     # Build Model
     print('Initializing model...')
-    model = build_model(cfg.model)
+    print(cfg.model)
+    model = build_model(cfg.model, num_labels)
     n_params = sum(p.numel() for p in model.parameters())
     print(f'{n_params=:.4e}')
 
-    # Dataloaders
-    print('Building train loader...')
-    train_loader = build_my_dataloader(
-        cfg.train_loader,
-        cfg.global_train_batch_size // dist.get_world_size(),
-    )
-    print('Building eval loader...')
-    global_eval_batch_size = cfg.get('global_eval_batch_size',
-                                     cfg.global_train_batch_size)
-    eval_loader = build_my_dataloader(
-        cfg.eval_loader,
-        global_eval_batch_size // dist.get_world_size(),
-    )
-
     # Optimizer
+    print('Building optimizer...')
     optimizer = build_optimizer(cfg.optimizer, model)
 
     # Scheduler
+    print('Building scheduler...')
     scheduler = build_scheduler(cfg.scheduler)
 
     # Loggers
+    print('Building loggers...')
     loggers = [
         build_logger(name, logger_cfg)
         for name, logger_cfg in cfg.get('loggers', {}).items()
     ]
 
     # Callbacks
+    print('Building callbacks...')
     callbacks = [
         build_callback(name, callback_cfg)
         for name, callback_cfg in cfg.get('callbacks', {}).items()
     ]
 
     # Algorithms
+    print('Building algorithms...')
     algorithms = [
         build_algorithm(name, algorithm_cfg)
         for name, algorithm_cfg in cfg.get('algorithms', {}).items()
@@ -278,6 +305,7 @@ def main(cfg: DictConfig,
                                       'sequence-classification')
 
     # Build the Trainer
+    print('Building trainer...')
     trainer = Trainer(
         run_name=cfg.run_name,
         seed=cfg.seed,

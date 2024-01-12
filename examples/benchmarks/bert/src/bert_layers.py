@@ -876,6 +876,9 @@ class BertForMaskedLM(BertPreTrainedModel):
                 'Mosaic BERT does not support loading TensorFlow weights.')
 
         state_dict = torch.load(pretrained_checkpoint)
+        # Extract model dict from the state_dict
+        state_dict = state_dict["state"]["model"]
+        
         # If the state_dict was saved after wrapping with `composer.HuggingFaceModel`, it takes on the `model` prefix
         consume_prefix_in_state_dict_if_present(state_dict, prefix='model.')
         missing_keys, unexpected_keys = model.load_state_dict(state_dict,
@@ -1047,6 +1050,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
                 'Mosaic BERT does not support loading TensorFlow weights.')
 
         state_dict = torch.load(pretrained_checkpoint)
+        # Extract model dict from the state_dict
+        state_dict = state_dict["state"]["model"]
+
         # If the state_dict was saved after wrapping with `composer.HuggingFaceModel`, it takes on the `model` prefix
         consume_prefix_in_state_dict_if_present(state_dict, prefix='model.')
         missing_keys, unexpected_keys = model.load_state_dict(state_dict,

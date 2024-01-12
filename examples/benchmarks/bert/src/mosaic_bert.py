@@ -257,6 +257,7 @@ def create_mosaic_bert_classification(
         config.vocab_size += 8 - (config.vocab_size % 8)
 
     if pretrained_checkpoint is not None:
+        print(f'Loading pre-trained weights from {pretrained_checkpoint}...')
         model = bert_layers_module.BertForSequenceClassification.from_composer(
             pretrained_checkpoint=pretrained_checkpoint, config=config)
     else:
@@ -290,6 +291,84 @@ def create_mosaic_bert_classification(
                                 use_logits=True,
                                 metrics=metrics)
 
+    # Padding for divisibility by 8
+    # We have to do it again here because wrapping by HuggingFaceModel changes it
+    if config.vocab_size % 8 != 0:
+        config.vocab_size += 8 - (config.vocab_size % 8)
+    hf_model.model.resize_token_embeddings(config.vocab_size)
+
+    return hf_model
+
+
+def create_mosaic_bert_pattern_based_classification(
+        num_labels: int,
+        pretrained_model_name: str = 'bert-base-uncased',
+        model_config: Optional[dict] = None,
+        tokenizer_name: Optional[str] = None,
+        gradient_checkpointing: Optional[bool] = False,
+        pretrained_checkpoint: Optional[str] = None):
+        
+    if not model_config:
+        model_config = {}
+
+    # By default, turn off attention dropout in MosaicBERT
+    # Flash Attention 2 supports dropout in the attention module
+    # while our previous Triton Flash Attention layer only works with
+    # attention_probs_dropout_prob = 0.
+    if 'attention_probs_dropout_prob' not in model_config:
+        model_config['attention_probs_dropout_prob'] = 0.0
+
+    # Use `alibi_starting_size` to determine how large of an alibi tensor to
+    # create when initializing the model. You should be able to ignore
+    # this parameter in most cases.
+    if 'alibi_starting_size' not in model_config:
+        model_config['alibi_starting_size'] = 512
+
+    model_config['num_labels'] = num_labels
+
+    if not pretrained_model_name:
+        pretrained_model_name = 'bert-base-uncased'
+
+    config, unused_kwargs = transformers.AutoConfig.from_pretrained(
+        pretrained_model_name, return_unused_kwargs=True, **model_config)
+    # This lets us use non-standard config fields (e.g. `starting_alibi_size`)
+    config.update(unused_kwargs)
+
+    # Padding for divisibility by 8
+    if config.vocab_size % 8 != 0:
+        config.vocab_size += 8 - (config.vocab_size % 8)
+
+    # Load the model
+    if pretrained_checkpoint is not None:
+        print(f'Loading pre-trained weights from {pretrained_checkpoint}...')
+        model = bert_layers_module.BertForMaskedLM.from_composer(
+            pretrained_checkpoint=pretrained_checkpoint, config=config)
+    else:
+        model = bert_layers_module.BertForMaskedLM(config)
+
+    if gradient_checkpointing:
+        model.gradient_checkpointing_enable()  # type: ignore
+
+    # Setup the tokenizer
+    if tokenizer_name:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_name)
+    else:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            pretrained_model_name)
+    
+    # Setup metrics
+    print("Setting up metrics...")
+    metrics = [
+        LanguageCrossEntropy(ignore_index=-100),
+        MaskedAccuracy(ignore_index=-100)
+    ]
+
+    print("Wrapping model as a HuggingFaceModel...")
+    hf_model = HuggingFaceModel(model=model,
+                                tokenizer=tokenizer,
+                                use_logits=True,
+                                metrics=metrics)
+    
     # Padding for divisibility by 8
     # We have to do it again here because wrapping by HuggingFaceModel changes it
     if config.vocab_size % 8 != 0:
