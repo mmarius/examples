@@ -91,6 +91,7 @@ def create_glue_dataset(
         
         # --------------------------------------------------------------------------
 
+        num_labels = len(dataset.features["label"].names)
         tokenize_function = tokenize
         label_column = "label"
 
@@ -115,7 +116,8 @@ def create_glue_dataset(
             pattern_examples = [
                 dataset_cfg.pattern.format(
                     text1=inp[text_column_names[0]][idx],
-                    text2=inp[text_column_names[1]][idx] if text_column_names[1] is not None else None)
+                    text2=inp[text_column_names[1]][idx] if text_column_names[1] is not None else None,
+                    mask=tokenizer.mask_token)
                 for idx in range(len(inp[text_column_names[0]]))
             ]
             
@@ -161,6 +163,82 @@ def create_glue_dataset(
         tokenize_function = tokenize_with_pattern
         label_column = "labels"
 
+    elif ft_type == "causal-pbft":
+    
+        # ------------ tokenize function for pattern-based finetuning with causal LMs ------------
+        
+        # construct verbalizer
+        mappings = dataset_cfg.verbalizer.split(",")
+        mappings = [map.split("-->") for map in mappings]
+        verbalizer = {token.strip(): int(label) for token, label in mappings}
+        verbalizer_inv = {v: k for k, v in verbalizer.items()} # invert
+
+        # we need to update the number of classes of the dataset
+        new_features = dataset.features.copy()
+        new_features["label"] = datasets.ClassLabel(names=list(tokenizer.vocab.values()))
+        dataset = dataset.cast(new_features)
+        num_labels = len(dataset.features["label"].names)
+
+        # add padding token to tokenizer (pythia doesn't have a padding token)
+        tokenizer.pad_token = tokenizer.eos_token
+        
+        def tokenize_with_pattern(inp):
+            # apply pattern to inputs
+            pattern_examples = [
+                dataset_cfg.pattern.format(
+                    text1=inp[text_column_names[0]][idx],
+                    text2=inp[text_column_names[1]][idx] if text_column_names[1] is not None else None,
+                    label=verbalizer_inv[inp["label"][idx]][1:] # we omit the Ġ
+                )
+                for idx in range(len(inp[text_column_names[0]]))
+            ]
+            
+            # tokenizer
+            args = (pattern_examples,)
+            result = tokenizer(
+                *args, 
+                padding='max_length',
+                max_length=max_seq_length, 
+                truncation=True
+                )
+            
+            # # DEBUGGING ONLY 
+            # # get tokens
+            # result["input_tokens"] = [tokenizer.convert_ids_to_tokens(
+            #     ids) for ids in result["input_ids"]]
+
+            # # decode input
+            # result["input_text"] = [tokenizer.decode(
+            #     ids) for ids in result["input_ids"]]
+
+            # convert the dataset label to a token id using the verbalizer
+            label_tokens = [verbalizer_inv[label] for label in inp["label"]]
+            label_ids = tokenizer.convert_tokens_to_ids(label_tokens)
+            
+            # place the actual label at the end of the pattern
+            # the input looks like this: pattern [PAD] ... [PAD]
+            result["labels"] = []
+            result["continuation_indices"] = []
+            for idx in range(len(result["input_ids"])):
+                # get the position of the first [PAD] token
+                try:
+                    pad_position = result["input_ids"][idx].index(tokenizer.pad_token_id) # get index of first padding token
+                    label_position = pad_position - 1 # we place the label before the padding token (the target token is always the last token before padding)
+                except ValueError: # input got truncated
+                    label_position = len(result["input_ids"][idx]) - 1 # use the last token
+
+                labels = [-100] * max_seq_length # cross entropy will ignore all token positions with label -100
+                labels[label_position] = label_ids[idx] # replace placeholder label
+                result["labels"].append(labels)
+                result["continuation_indices"].append(label_position)
+
+            return result
+        
+        # --------------------------------------------------------------------------------------
+
+        tokenize_function = tokenize_with_pattern
+        label_column = "labels"
+
     else:
         raise ValueError(f'Unsupported ft_type={ft_type}')
 
@@ -181,6 +259,13 @@ def create_glue_dataset(
     )
 
     # format dataset
-    dataset.set_format(type="torch", columns=["input_ids", "token_type_ids", "attention_mask", label_column], output_all_columns=False)
+    columns = ["input_ids", "token_type_ids", "attention_mask", label_column]
+    if "roberta" in str(type(tokenizer)):
+        columns.remove("token_type_ids")
+    if "gpt_neox" in str(type(tokenizer)): # pythia's tokenizer type
+        columns.remove("token_type_ids")
+        columns.append("continuation_indices")
+
+    dataset.set_format(type="torch", columns=columns, output_all_columns=False)
 
     return dataset, num_labels
