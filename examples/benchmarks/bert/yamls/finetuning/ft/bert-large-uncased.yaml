@@ -12,6 +12,8 @@ max_seq_len: 256
 
 load_path: # (Optionally) provide a composer checkpoint to use for the starting weights
 
+ft_type: pbft # ft (classifier fine-tuning) or pbft (pattern-based fine-tuning)
+
 # Model
 model:
   name: hf_bert

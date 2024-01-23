@@ -11,22 +11,22 @@ tokenizer_name: bert-large-uncased
 max_seq_len: 256
 
 load_path: # (Optionally) provide a composer checkpoint to use for the starting weights
-checkpoint_id: ep0-ba50000 # name of the checkpoint. We will overwrite this in the ft.sh file (actually the run.sub file)
 
 ft_type: pbft # ft (classifier fine-tuning) or pbft (pattern-based fine-tuning)
 
 # Dataset
 dataset:
   name: rte
-  pattern: "{text1} are we justified in saying that “{text2}”? [MASK]"
-  verbalizer: yes-->1, no-->0
+  # pattern: "{text1} are we justified in saying that “{text2}”? {mask}" # instructive-1
+  pattern: "{text1} {mask} {text2}" # minimal-1
+  verbalizer: yes-->0, no-->1
 
 # Model
 model:
-  name: mosaic_bert-pbft
+  name: hf_bert-pbft
+  use_pretrained: true
   pretrained_model_name: ${tokenizer_name}
   tokenizer_name: ${tokenizer_name}
-  pretrained_checkpoint: /data/users/mmosbach/pre-trained-transformers/mosaic-bert-large/${checkpoint_id}-rank0.pt
 
 # Dataloaders (make sure to update these after you modify the starter script!)
 train_loader:
@@ -73,7 +73,7 @@ global_train_batch_size: 16
 seed: 123
 device_eval_batch_size: 16
 device_train_microbatch_size: 16
-precision: amp_bf16
+precision: amp_fp16
 
 # Logging
 progress_bar: true
@@ -85,7 +85,7 @@ loggers:
   wandb:
     project: mosaicbert-ft
     entity: mmosbach
-    group: ${checkpoint_id}_${ft_type}
+    group: ${tokenizer_name}_${ft_type}
 
 callbacks:
   speed_monitor:
@@ -93,4 +93,4 @@ callbacks:
   lr_monitor: {}
 
 # Run Name
-run_name: ${model.name}_${checkpoint_id}_${train_loader.num_samples}_${seed}
+run_name: ${model.name}_${train_loader.num_samples}_${seed}

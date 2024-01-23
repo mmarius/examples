@@ -7,15 +7,26 @@ source /nethome/mmosbach/projects/mosaicml_examples/examples/benchmarks/bert/scr
 export CACHE_BASE_DIR=/data/users/mmosbach/logs/mosaicml_examples/cache
 export OUTPUT_DIR=/data/users/mmosbach/logs/mosaicml_examples/logfiles
 
+# set paths for transformers, datasets
+export TOKENIZERS_PARALLELISM=true
+export TRANSFORMERS_CACHE=$CACHE_BASE_DIR/transformers
+export HF_DATASETS_CACHE=$CACHE_BASE_DIR/datasets
+
 # setup wandb
 export WANDB_DISABLED=false
-export WANDB_API_KEY=483d16b0cbe267d445706c02abeacc9547c967c8
+export WANDB_API_KEY=TODO
 export WANDB_USERNAME=mmosbach
-export WANDB_CACHE_DIR=$CACHE_BASE_DIR/wandb
-export WANDB_CONFIG_DIR=$WANDB_CACHE_DIR
+export WANDB_DIR=$CACHE_BASE_DIR/wandb/logs
+export WANDB_CACHE_DIR=$CACHE_BASE_DIR/wandb/artifacts
+export WANDB_CONFIG_DIR=$CACHE_BASE_DIR/wandb/configs
 
 # create cash dirs if they don't exist yet
+mkdir -p $TRANSFORMERS_CACHE
+mkdir -p $HF_DATASETS_CACHE
+mkdir -p $WANDB_DIR
 mkdir -p $WANDB_CACHE_DIR
+mkdir -p $WANDB_CONFIG_DIR
+
 
 # install dependencies
 # TODO(mm): run this when building the image

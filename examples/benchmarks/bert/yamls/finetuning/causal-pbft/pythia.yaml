@@ -1,0 +1,101 @@
+# This YAML is built to work with the `sequence_classification.py` starter script!
+#
+#   Follow the instructions in that script to modify the `build_my_dataloader` function
+#   and fine-tune a BERT model on your own dataset!
+#
+#
+#   Note that some of the fields in this template haven't been filled in yet.
+#   Please resolve any empty fields before launching!
+
+# tokenizer_name: EleutherAI/pythia-410m # --> fits on 1x A100 40GB
+# tokenizer_name: EleutherAI/pythia-1.4B # --> fits on 1x A100 40GB
+# tokenizer_name: EleutherAI/pythia-2.8B # --> fits on 2x A100 40GB
+tokenizer_name: EleutherAI/pythia-6.9B # --> fits on 4x A100 40GB
+# tokenizer_name: EleutherAI/pythia-12B # --> fits on TODO
+max_seq_len: 256
+
+load_path: # (Optionally) provide a composer checkpoint to use for the starting weights
+
+ft_type: causal-pbft # ft (classifier fine-tuning) or pbft (pattern-based fine-tuning)
+
+# Dataset
+dataset:
+  name: rte
+  pattern: "{text1} {text2} ? {label}" # minimal-1
+  verbalizer: ĠYes-->0, ĠNo-->1
+
+# Model
+model:
+  name: pythia_${ft_type}
+  use_pretrained: true
+  revision: main # default is main
+  pretrained_model_name: ${tokenizer_name}
+  tokenizer_name: ${tokenizer_name}
+
+# Dataloaders (make sure to update these after you modify the starter script!)
+train_loader:
+  task: ${dataset.name}
+  split: train
+  num_samples: 128 # <-- -1 means we take the full dataset
+  tokenizer_name: ${tokenizer_name}
+  max_seq_len: ${max_seq_len}
+  shuffle: true
+  drop_last: true
+  num_workers: 8
+
+eval_loader:
+  task: ${dataset.name}
+  split: validation
+  num_samples: -1 # for eval this should always be -1, i.e. eval on the full validation split
+  tokenizer_name: ${tokenizer_name}
+  max_seq_len: ${max_seq_len}
+  shuffle: true
+  drop_last: true
+  num_workers: 8
+
+# Optimization
+scheduler:
+  # name: linear_decay_with_warmup
+  name: constant_with_warmup
+  t_warmup: 0.10dur # Warmup to the full LR for 10% of the training duration
+  # alpha_f: 0.02 # Linearly decay to 0.02x the full LR by the end of the training duration
+
+optimizer:
+  name: decoupled_adamw
+  lr: 5.0e-6
+  betas:
+  - 0.9
+  - 0.98
+  eps: 1.0e-06
+  weight_decay: 1.0e-6
+
+# Training duration and evaluation frequency
+max_duration: 100ep
+eval_interval: 2ep
+global_train_batch_size: 16
+
+# System
+seed: 123
+device_eval_batch_size: 16
+device_train_microbatch_size: 16
+precision: amp_fp16
+
+# Logging
+progress_bar: true
+log_to_console: false
+console_log_interval: 10ba
+
+# Optionally log to W&B
+loggers:
+  wandb:
+    project: emergence-few-shot-ft
+    entity: mmosbach
+    group: ${tokenizer_name}_${model.revision}_${ft_type}
+
+callbacks:
+  speed_monitor:
+    window_size: 50
+  lr_monitor: {}
+
+# Run Name
+run_name: ${model.name}_${model.revision}_${train_loader.num_samples}_${seed}

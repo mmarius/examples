@@ -1,0 +1,100 @@
+# This YAML is built to work with the `sequence_classification.py` starter script!
+#
+#   Follow the instructions in that script to modify the `build_my_dataloader` function
+#   and fine-tune a BERT model on your own dataset!
+#
+#
+#   Note that some of the fields in this template haven't been filled in yet.
+#   Please resolve any empty fields before launching!
+
+tokenizer_name: bert-large-uncased
+max_seq_len: 256
+
+load_path: # (Optionally) provide a composer checkpoint to use for the starting weights
+checkpoint_id: ep0-ba50000 # name of the checkpoint. We will overwrite this in the ft.sh file (actually the run.sub file)
+
+ft_type: pbft # ft (classifier fine-tuning) or pbft (pattern-based fine-tuning)
+
+# Dataset
+dataset:
+  name: rte
+  # pattern: "{text1} are we justified in saying that “{text2}”? {mask}" # instructive-1
+  pattern: "{text1} {mask} {text2}" # minimal-1
+  verbalizer: yes-->0, no-->1
+
+# Model
+model:
+  name: mosaic_bert-${ft_type}
+  pretrained_model_name: ${tokenizer_name}
+  tokenizer_name: ${tokenizer_name}
+  # pretrained_checkpoint: /data/users/mmosbach/pre-trained-transformers/mosaic-bert-large-178k/${checkpoint_id}-rank0.pt # pre-trained for 178k steps
+  pretrained_checkpoint: /data/users/mmosbach/pre-trained-transformers/mosaic-bert-large-712k/${checkpoint_id}-rank0.pt # pre-trained for 712k steps
+
+# Dataloaders (make sure to update these after you modify the starter script!)
+train_loader:
+  task: ${dataset.name}
+  split: train
+  num_samples: 128 # <-- -1 means we take the full dataset
+  tokenizer_name: ${tokenizer_name}
+  max_seq_len: ${max_seq_len}
+  shuffle: true
+  drop_last: true
+  num_workers: 8
+
+eval_loader:
+  task: ${dataset.name}
+  split: validation
+  num_samples: -1 # for eval this should always be -1, i.e. eval on the full validation split
+  tokenizer_name: ${tokenizer_name}
+  max_seq_len: ${max_seq_len}
+  shuffle: true
+  drop_last: true
+  num_workers: 8
+
+# Optimization
+scheduler:
+  # name: constant_with_warmup
+  name: linear_decay_with_warmup
+  t_warmup: 0.10dur # Warmup to the full LR for 10% of the training duration
+  alpha_f: 0.02 # Linearly decay to 0.02x the full LR by the end of the training duration
+
+optimizer:
+  name: decoupled_adamw
+  lr: 1.0e-5
+  betas:
+  - 0.9
+  - 0.98
+  eps: 1.0e-06
+  weight_decay: 1.0e-6
+
+# Training duration and evaluation frequency
+max_duration: 40ep
+eval_interval: 1ep
+global_train_batch_size: 16
+
+# System
+seed: 123
+device_eval_batch_size: 16
+device_train_microbatch_size: 16
+precision: amp_bf16
+
+# Logging
+progress_bar: true
+log_to_console: false
+console_log_interval: 10ba
+
+# Optionally log to W&B
+loggers:
+  wandb:
+    project: emergence-few-shot-ft
+    entity: mmosbach
+    # group: 178k_${checkpoint_id}_${ft_type}
+    group: 712k_${checkpoint_id}_${ft_type}
+
+callbacks:
+  speed_monitor:
+    window_size: 50
+  lr_monitor: {}
+
+# Run Name
+run_name: ${model.name}_${checkpoint_id}_${train_loader.num_samples}_${seed}
