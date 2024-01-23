@@ -228,3 +228,58 @@ def create_hf_bert_classification(
                             tokenizer=tokenizer,
                             use_logits=True,
                             metrics=metrics)
+
+
+def create_hf_bert_pattern_based_classification(
+        num_labels: int,
+        pretrained_model_name: str = 'bert-base-uncased',
+        use_pretrained: Optional[bool] = False,
+        model_config: Optional[dict] = None,
+        tokenizer_name: Optional[str] = None,
+        gradient_checkpointing: Optional[bool] = False):
+    try:
+        import transformers
+    except ImportError as e:
+        raise MissingConditionalImportError(extra_deps_group='nlp',
+                                            conda_package='transformers') from e
+
+    if not model_config:
+        model_config = {}
+
+    model_config['num_labels'] = num_labels
+
+    if not pretrained_model_name:
+        pretrained_model_name = 'bert-base-uncased'
+
+    if use_pretrained:
+        assert transformers.AutoModelForMaskedLM.from_pretrained is not None, 'AutoModelForSequenceClassification has from_pretrained method'
+        model = transformers.AutoModelForMaskedLM.from_pretrained(
+            pretrained_model_name_or_path=pretrained_model_name, **model_config)
+    else:
+        config = transformers.AutoConfig.from_pretrained(
+            pretrained_model_name, **model_config)
+        assert transformers.AutoModelForMaskedLM.from_config is not None, 'AutoModelForSequenceClassification has from_config method'
+        model = transformers.AutoModelForMaskedLM.from_config(
+            config)
+
+    if gradient_checkpointing:
+        model.gradient_checkpointing_enable()
+
+    # setup the tokenizer
+    if tokenizer_name:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer_name)
+    else:
+        tokenizer = None
+
+    # Setup metrics
+    print("Setting up metrics...")
+    metrics = [
+        LanguageCrossEntropy(ignore_index=-100),
+        MaskedAccuracy(ignore_index=-100)
+    ]
+
+    print("Wrapping model as a HuggingFaceModel...")
+    return HuggingFaceModel(model=model,
+                            tokenizer=tokenizer,
+                            use_logits=True,
+                            metrics=metrics)

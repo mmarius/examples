@@ -5,6 +5,7 @@
 
 import os
 import sys
+import torch
 from typing import Optional, cast
 
 # Add folder root to path to allow us to use relative imports regardless of what directory the script is run from
@@ -12,6 +13,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 import src.glue.data as data_module
 import src.hf_bert as hf_bert_module
+import src.hf_pythia as hf_pythia_module
 import src.mosaic_bert as mosaic_bert_module
 import transformers
 from composer import Trainer, algorithms
@@ -201,9 +203,16 @@ def build_my_dataloader(cfg: DictConfig, device_batch_size: int, dataset_cfg: Di
 
 
 def build_model(cfg: DictConfig, num_labels: int):
-    # TODO(mm): add code for hf_bert-pbft
-    if cfg.name == 'hf_bert-ft':
+    if cfg.name in ["hf_bert-ft", "hf_roberta-ft", "hf_albert-ft"]:
         return hf_bert_module.create_hf_bert_classification(
+            num_labels=num_labels,
+            pretrained_model_name=cfg.pretrained_model_name,
+            use_pretrained=cfg.get('use_pretrained', False),
+            model_config=cfg.get('model_config'),
+            tokenizer_name=cfg.get('tokenizer_name'),
+            gradient_checkpointing=cfg.get('gradient_checkpointing'))
+    elif cfg.name in ["hf_bert-pbft", "hf_roberta-pbft", "hf_albert-pbft"]:
+        return hf_bert_module.create_hf_bert_pattern_based_classification(
             num_labels=num_labels,
             pretrained_model_name=cfg.pretrained_model_name,
             use_pretrained=cfg.get('use_pretrained', False),
@@ -223,6 +232,15 @@ def build_model(cfg: DictConfig, num_labels: int):
             num_labels=num_labels,
             pretrained_model_name=cfg.pretrained_model_name,
             pretrained_checkpoint=cfg.get('pretrained_checkpoint'),
+            model_config=cfg.get('model_config'),
+            tokenizer_name=cfg.get('tokenizer_name'),
+            gradient_checkpointing=cfg.get('gradient_checkpointing'))
+    elif cfg.name in ["pythia_causal-pbft"]:
+        return hf_pythia_module.create_hf_pythia_lm(
+            num_labels=num_labels,
+            pretrained_model_name=cfg.pretrained_model_name,
+            use_pretrained=cfg.get('use_pretrained', False),
+            revision=cfg.get('revision', 'main'),
             model_config=cfg.get('model_config'),
             tokenizer_name=cfg.get('tokenizer_name'),
             gradient_checkpointing=cfg.get('gradient_checkpointing'))
@@ -303,6 +321,22 @@ def main(cfg: DictConfig,
     if cfg.get('run_name') is None:
         cfg.run_name = os.environ.get('COMPOSER_RUN_NAME',
                                       'sequence-classification')
+    
+    # We will run distributed fine-tuning for larger models
+    if torch.cuda.device_count() > 1:
+        print('Creating distributed training config...')
+        # Create fdsp config for distributed training
+        fsdp_config = {
+            'sharding_strategy': 'FULL_SHARD',
+            'cpu_offload': False, # Not supported yet
+            'mixed_precision': 'DEFAULT',
+            'backward_prefetch': 'BACKWARD_POST',
+            'activation_checkpointing': False,
+            'activation_cpu_offload': False,
+            'verbose': True
+        }
+    else:
+        fsdp_config = None
 
     # Build the Trainer
     print('Building trainer...')
@@ -310,6 +344,7 @@ def main(cfg: DictConfig,
         run_name=cfg.run_name,
         seed=cfg.seed,
         model=model,
+        fsdp_config=fsdp_config,
         algorithms=algorithms,
         train_dataloader=train_loader,
         eval_dataloader=eval_loader,
