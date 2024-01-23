@@ -3,7 +3,7 @@
 docker build -f /nethome/mmosbach/projects/composer/docker/Dockerfile_local \
     --build-arg USER_UID=$UID \
     --build-arg USER_NAME=$(id -un) \
-    -t docker.lsv.uni-saarland.de/mmosbach/composer-cpu-dev:2.1.1_cpu-python3.10-ubuntu20.04 . 
+    -t docker.lsv.uni-saarland.de/mmosbach/mosaicml:2.1.1_cpu-python3.10-ubuntu20.04 . 
 
 
 docker build -f /nethome/mmosbach/projects/composer/docker/Dockerfile_cluster \
@@ -19,7 +19,7 @@ docker run -it --rm \
     -v /nethome/mmosbach/projects/mosaicml_examples:/mosaicml_examples \
     -v /data/users/mmosbach:/data \
     --shm-size=512GB \
-    docker.lsv.uni-saarland.de/mmosbach/composer-cpu-dev:2.1.1_cpu-python3.10-ubuntu20.04 \
+    docker.lsv.uni-saarland.de/mmosbach/mosaicml:2.1.1_cpu-python3.10-ubuntu20.04 \
     /bin/bash
 
 
@@ -32,7 +32,7 @@ docker run -it --rm \
     -v /nethome/mmosbach/projects/mosaicml_examples:/mosaicml_examples \
     -v /data/users/mmosbach:/data \
     --shm-size=512GB \
-    docker.lsv.uni-saarland.de/mmosbach/composer-cpu-dev:2.1.1_cpu-python3.10-ubuntu20.04 \
+    docker.lsv.uni-saarland.de/mmosbach/mosaicml:2.1.1_cu121-python3.10-ubuntu20.04 \
     /bin/bash
 
 # Install dependencies
